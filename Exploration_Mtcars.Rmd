@@ -1,0 +1,123 @@
+---
+title: "Exploration of the Mtcars dataset"
+author: "Hélène Descamps"
+date: "2025-06-14"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## load libraries
+```{r, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(smplot2)
+library(ggpubr)
+```
+
+## load and print statistics of mtcars
+```{r, message=FALSE}
+data(mtcars)
+```
+```{r}
+summary(mtcars)
+#sapply(mtcars, sd)
+dim(mtcars) 
+colnames(mtcars) 
+head(mtcars, 5)
+```
+
+## Principal component analysis
+```{r, message=FALSE}
+pca.res <- prcomp(mtcars, scale.=F, retx=T)
+pc.var<-pca.res$sdev^2 
+pc.per<-round(pc.var/sum(pc.var)*100, 1) 
+pca.res.df <- as_tibble(pca.res$x)%>%
+  mutate(car=rownames(pca.res$x))
+
+rotation<-as_tibble(pca.res$rotation)%>%
+  mutate(features=rownames(pca.res$rotation))%>%
+  pivot_longer(!features,names_to="PC")
+
+```
+
+```{r}
+ggplot(data= filter(rotation, PC %in% c("PC1", "PC2", "PC3", "PC4")) , aes(x=features, y=value))+
+  geom_point()+
+  facet_wrap(~PC, scales="free")+
+  theme(strip.background = element_blank(), axis.text.x=element_text(angle=90))+
+  theme(text=element_text(size=20))
+#ggsave("PCvsFeatures.tiff")
+```
+```{r}
+pca.res.df<-merge(pca.res.df, mtcars, by.x="car", by.y="row.names")
+ggplot(pca.res.df, aes(x=PC1, y=PC2))+
+  geom_point(aes(color=disp, size=hp)) +
+  ylim(-200,200)+
+  xlab(paste0("PC1 (",pc.per[1],"%",")"))+
+  ylab(paste0("PC2 (",pc.per[2],"%",")"))+
+  labs(color="disp", size="hp")+
+  theme_classic()+
+  theme(aspect.ratio = 1.25)+
+  theme(text=element_text(size=20))
+#ggsave("PC1dispVsPC2hp.tiff")
+```
+
+> Displacement is the primary contributor to PC1, which explains 92.7% of the variance in the mtcars dataset, while horsepower predominantly influences PC2, accounting for an additional 7.2% of the total variance.
+
+## How does weight influences miles/gallon?
+```{r, message=FALSE}
+ggplot(mtcars, aes(x=mpg, y=wt))+
+  geom_point()+
+  sm_statCorr(corr_method='pearson', R2=TRUE, color="darkblue" ,label_x=20, label_y=5)+
+  theme_classic()+
+  labs(x="Miles per gallon", y="Weight (1000lbs)")+
+  theme(aspect.ratio = 1.25)+
+  theme(text=element_text(size=20))
+#ggsave("MPGvsWeight.tiff")
+```
+
+> Miles per gallon is inversely correlated to the vehicle weight, which alone accounts for 75% of the variation in fuel efficiency.
+
+## What is the average mpg by cyl ?
+```{r}
+mtcars%>%
+  group_by(cyl)%>%
+  summarise(mean_mpg=mean(mpg))%>%
+  ggplot(aes(x=as.factor(cyl), y=mean_mpg, fill=cyl))+
+  geom_col(show.legend=FALSE)+
+  labs(x="cylinder", y="miles per gallon (average)")+
+  theme_classic()+
+  theme(aspect.ratio = 1.25)+
+  theme(text=element_text(size=20))
+#ggsave("meanMPGvsCyl.tiff")
+```
+
+## Create a linear model of mpg by wt and hp
+```{r}
+model <- lm(mpg ~ wt+ hp, data=mtcars)
+summary(model)
+```
+
+# Categorize Horsepower into high and low groups based on the median value, and perform a t-test to assess the significance of their effect on miles per gallon.
+```{r}
+mtcars2<-mtcars%>%
+  dplyr::mutate(hp_cat=ifelse(hp<median(mtcars$hp),"low", "high"))
+t.test(mtcars2$mpg ~ mtcars2$hp_cat)
+
+compare_means(mpg ~ hp_cat, data=mtcars2, method="t.test")
+
+ggplot(mtcars2, aes(x=factor(hp_cat, levels=c("low", "high")), y=mpg, fill=hp_cat))+
+  geom_boxplot(show.legend=FALSE)+
+  labs(x="horsepower", y="miles per gallon")+
+  theme_classic()+
+  theme(aspect.ratio = 1.25)+
+  stat_compare_means(method="t.test")
+#ggsave("HPhighVSlow_mpg.tiff")
+```
+
+> Higher horsepower significantly reduces miles/gallon (95% CI [-12,-6], p=1.6e-06)
