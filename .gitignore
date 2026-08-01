@@ -1,0 +1,20 @@
+
+# R
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+
+# renv
+renv/library/
+renv/staging/
+
+# Quarto/R Markdown
+*_files/
+*.html
+
+# Data
+data/
+
+/.quarto/
+**/*.quarto_ipynb

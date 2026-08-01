@@ -1,0 +1,302 @@
+---
+title: "Exploration of the Mtcars dataset"
+author: "Hélène Descamps"
+date: "2025-06-14"
+format:
+  html:
+    toc: true
+    theme: cosmo
+---
+
+The mtcars dataset contains fuel efficiency and design characteristics for 32 automobile models. This analysis explores how vehicle properties such as weight, horsepower, displacement, and cylinders relate to fuel efficiency.
+
+
+```{r}
+#| label: setup
+#| include: false
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries
+
+```{r}
+#| label: load-libraries
+#| message: false
+
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(smplot2)
+library(ggpubr)
+```
+
+## Load and print statistics of mtcars
+
+```{r}
+#| label: load-data
+#| message: false
+
+data(mtcars)
+```
+
+```{r}
+#| label: data dictionary
+glimpse(mtcars)
+
+```
+
+
+```{r}
+#| label: summary-statistics
+
+summary(mtcars)
+
+dim(mtcars)
+
+colnames(mtcars)
+
+head(mtcars, 5)
+```
+
+## exploratory distributions
+
+```{r}
+#| label: distributions
+#| message: false
+
+mtcars %>%
+  pivot_longer(
+    everything(),
+    names_to="variable",
+    values_to="value"
+  ) %>%
+  ggplot(aes(value)) +
+  geom_histogram(bins=20) +
+  facet_wrap(~variable, scales="free")
+
+```
+
+## Principal component analysis
+
+```{r}
+#| label: pca-analysis
+#| message: false
+
+pca.res <- prcomp(mtcars, scale.=TRUE)
+
+pc.var <- pca.res$sdev^2
+
+pc.per <- round(pc.var/sum(pc.var)*100, 1)
+
+pca.res.df <- as_tibble(pca.res$x) %>%
+  mutate(car = rownames(pca.res$x))
+
+rotation <- as_tibble(pca.res$rotation) %>%
+  mutate(features = rownames(pca.res$rotation)) %>%
+  pivot_longer(!features, names_to="PC")
+```
+
+```{r}
+#| label: scree plot
+#| message: false
+
+tibble(
+  PC = paste0("PC", seq_along(pc.per)),
+  Variance = pc.per
+) %>%
+ggplot(aes(PC, Variance)) +
+geom_col() +
+ylab("% variance explained")
+
+```
+
+
+```{r}
+#| label: pca-loadings-plot
+
+ggplot(
+  data = filter(rotation, PC %in% c("PC1", "PC2", "PC3", "PC4")),
+  aes(x=features, y=value)
+) +
+  geom_point() +
+  facet_wrap(~PC, scales="free") +
+  theme(
+    strip.background = element_blank(),
+    axis.text.x = element_text(angle=90)
+  ) +
+  theme(text=element_text(size=20))
+```
+
+```{r}
+#| label: pca-score-plot
+
+pca.res.df <- merge(
+  pca.res.df,
+  mtcars,
+  by.x="car",
+  by.y="row.names"
+)
+
+ggplot(pca.res.df, aes(x=PC1, y=PC2)) +
+  geom_point(aes(color=disp, size=hp)) +
+  ylim(-200,200) +
+  xlab(paste0("PC1 (", pc.per[1], "%)")) +
+  ylab(paste0("PC2 (", pc.per[2], "%)")) +
+  labs(color="disp", size="hp") +
+  theme_classic() +
+  theme(
+    aspect.ratio=1.25,
+    text=element_text(size=20)
+  )
+```
+
+```{r}
+#| label: biplot
+
+library(factoextra)
+
+fviz_pca_biplot(
+  pca.res,
+  repel=TRUE
+)
+
+```
+
+Displacement is the primary contributor to PC1, which explains 92.7% of the variance in the mtcars dataset, while horsepower predominantly influences PC2, accounting for an additional 7.2% of the total variance.
+
+## Correlation analysis
+
+```{r}
+#| label: correlation
+#| message: false
+
+cor(mtcars)
+
+```
+
+```{r}
+#| label: corr-visualization
+#| message: false
+
+library(GGally)
+
+ggcorr(
+  mtcars,
+  label=TRUE
+)
+
+```
+
+## How does weight influence miles/gallon?
+
+```{r}
+#| label: weight-mpg-correlation
+#| message: false
+
+summary(
+  lm(mpg ~ wt, data=mtcars)
+)
+```
+
+```{r}
+#| label: weight-mpg-corr-visual
+#| message: false
+ggplot(mtcars, aes(x=mpg, y=wt)) +
+  geom_point() +
+  sm_statCorr(
+    corr_method='pearson',
+    R2=TRUE,
+    color="darkblue",
+    label_x=20,
+    label_y=5
+  ) +
+  theme_classic() +
+  labs(
+    x="Miles per gallon",
+    y="Weight (1000lbs)"
+  ) +
+  theme(
+    aspect.ratio=1.25,
+    text=element_text(size=20)
+  )
+```
+
+Miles per gallon is inversely correlated to the vehicle weight, which alone accounts for 75% of the variation in fuel efficiency.
+
+A 1000 lb increase in vehicle weight is associated with a decrease of X mpg
+
+
+## What is the average mpg by cylinder number?
+
+```{r}
+#| label: mpg-by-cylinder
+
+mtcars %>%
+  group_by(cyl) %>%
+  summarise(mean_mpg=mean(mpg)) %>%
+  ggplot(aes(x=as.factor(cyl), y=mean_mpg, fill=cyl)) +
+  geom_col(show.legend=FALSE) +
+  labs(
+    x="Cylinder",
+    y="Miles per gallon (average)"
+  ) +
+  theme_classic() +
+  theme(
+    aspect.ratio=1.25,
+    text=element_text(size=20)
+  )
+```
+
+## Create a linear model of mpg by wt and hp
+
+```{r}
+#| label: linear-model
+
+model_hp <- lm(
+  mpg ~ wt +hp,
+  data=mtcars
+)
+
+summary(model_hp)
+```
+
+
+```{r}
+#| label: model-giagnostics
+
+par(mfrow=c(2,2))
+plot(model_hp)
+```
+
+## Categorize horsepower into high and low groups
+
+Horsepower was categorized using the median value, and a t-test was performed to assess the effect on miles per gallon.
+
+
+
+```{r}
+#| label: horsepower-visual
+
+ggplot(mtcars, aes(hp, mpg)) +
+geom_point() +
+geom_smooth(method="lm")
+```
+
+Higher horsepower significantly reduces miles/gallon (95% CI [-12,-6], p=1.6e-06).
+
+## aditional visualization
+```{r}
+
+library(GGally)
+
+ggpairs(mtcars)
+
+
+```
+## Reproducibility information
+```{r}
+
+sessionInfo()
+renv::snapshot()
+```
